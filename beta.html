@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Chá de Casa Nova - Lista de Presentes</title>
+<style>
+  body { font-family: Arial, sans-serif; max-width: 700px; margin: 20px auto; background: #f9f9f9; color: #222; padding: 20px; }
+  h1, h2 { text-align: center; color: #2c3e50; }
+  form, #adminPanel { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); margin-bottom: 25px; }
+  label { display: block; margin-top: 12px; font-weight: bold; }
+  input[type="text"], input[type="tel"] { width: 100%; padding: 8px; margin-top: 6px; border-radius: 5px; border: 1px solid #ccc; font-size: 14px; }
+  .presentes-lista { margin-top: 20px; max-height: 280px; overflow-y: auto; border: 1px solid #ccc; background: #fafafa; padding: 10px; border-radius: 6px; }
+  .presente-item { margin-bottom: 8px; }
+  button { margin-top: 20px; background-color: #27ae60; color: white; border: none; border-radius: 6px; padding: 12px; font-size: 16px; cursor: pointer; width: 100%; }
+  button:hover { background-color: #219150; }
+  #adminPanel { display: none; }
+  table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+  th, td { border: 1px solid #ccc; padding: 8px; font-size: 14px; text-align: left; }
+  th { background-color: #27ae60; color: white; position: sticky; top: 0; }
+  .btn-del { background: #c0392b; border: none; color: white; padding: 6px 10px; border-radius: 4px; cursor: pointer; }
+  .btn-del:hover { background: #a93226; }
+</style>
+</head>
+<body>
+
+<h1>Chá de Casa Nova</h1>
+
+<button id="btnToggleAdmin">Painel Admin</button>
+
+<form id="formConvidado">
+  <label for="nome">Seu nome:</label>
+  <input type="text" id="nome" required placeholder="Digite seu nome" />
+
+  <label for="telefone">Telefone:</label>
+  <input type="tel" id="telefone" required placeholder="Digite seu telefone" />
+
+  <label for="acompanhantes">Outros convidados (separe por vírgula):</label>
+  <input type="text" id="acompanhantes" placeholder="Ex: João, Maria, Pedro" />
+
+  <h2>Escolha seus presentes:</h2>
+  <div class="presentes-lista" id="listaPresentes"></div>
+
+  <button type="submit">Confirmar Escolha</button>
+</form>
+
+<div id="adminPanel">
+  <h2>Painel Administrativo</h2>
+  <button id="btnFecharAdmin" style="margin-bottom: 10px;">Fechar Painel</button>
+  <table>
+    <thead>
+      <tr><th>Nome</th><th>Telefone</th><th>Acompanhantes</th><th>Presente</th><th>Ação</th></tr>
+    </thead>
+    <tbody id="tabelaConvidados"></tbody>
+  </table>
+</div>
+
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+
+<script>
+  // Configuração do seu Firebase (criada conforme o tutorial abaixo)
+  const firebaseConfig = {
+    apiKey: "AIzaSyAwutfjhvRmZ3dmZkYNT38bHO-RAZLXYac",
+    authDomain: "chadecasanovabf.firebaseapp.com",
+    projectId: "chadecasanovabf",
+    storageBucket: "chadecasanovabf.firebasestorage.app",
+    messagingSenderId: "122461269977",
+    appId: "1:122461269977:web:974a3224699a52105e73c8",
+    measurementId: "G-EPMHMMREG7"
+  };
+
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
+
+  // Lista fixa de presentes
+  const presentes = [
+    "jogo de cama","lençol","tapete para o quarto","plantas para sala","rede e cancho","mantas","porta - chaves","velas aromatizador",
+    "projetor","prateleira","red set - presente do Fe","box","lixeira para banheiro","escova para o vaso","capacho","toalha de rosto",
+    "toalha de banho","mesa com cadeiras","microondas","liquidificador","mixer","panela de arroz elétrica","sanduicheira","lixeira de pia",
+    "escorredor de louças","rodinho de pia","porta detergente e esponja","porta talher","jogo de talheres","jogo de facas","conjunto de colheres de pau",
+    "conjunto de colheres de silicone","espremedor de batata","pegador de macarrão","faca de pão","abridor de lata","ralador","saca rolhas",
+    "espremedor de limão","triturador manual","espremedor de frutas","faca de bolo","colher para sorvete","escumadeira","tábuas para corte",
+    "panos de prato","panela de pressão","jogo de panelas","leiteria","frigideiras","formas e assadeiras","luva térmica","porta papel toalha",
+    "descanso de panelas","toalhas de mesa","jogo de pratos","jogo de copos","jogo de sobremesa","jogo americano","jarra para suco","taças de vinho",
+    "travessa de vidro","conjunto de xícaras","copo e colheres de medida","escorredor de macarrão","potes de acrílico, vidro e plásticos","peneira",
+    "pegador de salada/massa","bowls","forma de silicone para Airfryer","porta frios","petisqueira","varal","baldes de plástico","pá de lixo",
+    "pano de chão","pregadores de roupa","rodo","vassoura","escovinha de limpeza","caixa organizadora","kit ferramentas"
+  ];
+
+  const listaPresentesEl = document.getElementById('listaPresentes');
+  const tabelaConvidadosBody = document.getElementById('tabelaConvidados');
+  const adminPanel = document.getElementById('adminPanel');
+  const formConvidado = document.getElementById('formConvidado');
+
+  // Função para carregar os presentes que ainda não foram escolhidos
+  async function carregarPresentesDisponiveis() {
+    const snapshot = await db.collection("presentesEscolhidos").get();
+    const escolhidos = snapshot.docs.map(doc => doc.data().nomePresente);
+    listaPresentesEl.innerHTML = '';
+    presentes.forEach(p => {
+      if (!escolhidos.includes(p)) {
+        const div = document.createElement('div');
+        div.className = 'presente-item';
+        div.innerHTML = `<label><input type="checkbox" value="${p}" /> ${p}</label>`;
+        listaPresentesEl.appendChild(div);
+      }
+    });
+  }
+
+  // Envio do formulário
+  formConvidado.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const nome = document.getElementById('nome').value.trim();
+    const telefone = document.getElementById('telefone').value.trim();
+    const acompanhantes = document.getElementById('acompanhantes').value.trim();
+    const selecionados = Array.from(listaPresentesEl.querySelectorAll('input[type=checkbox]:checked')).map(cb => cb.value);
+
+    if (!nome || !telefone) {
+      alert("Preencha seu nome e telefone.");
+      return;
+    }
+    if (selecionados.length === 0) {
+      alert("Escolha pelo menos um presente.");
+      return;
+    }
+
+    try {
+      for (const item of selecionados) {
+        await db.collection("presentesEscolhidos").add({
+          nomePresente: item,
+          convidado: nome,
+          telefone,
+          acompanhantes: acompanhantes || "Nenhum",
+          timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      }
+      alert("Obrigado! Sua escolha foi registrada.");
+      formConvidado.reset();
+      carregarPresentesDisponiveis();
+    } catch (error) {
+      alert("Erro ao salvar. Tente novamente.");
+      console.error(error);
+    }
+  });
+
+  // Botão para abrir painel admin
+  document.getElementById('btnToggleAdmin').addEventListener('click', async () => {
+    const senha = prompt("Digite a senha do painel admin:");
+    if (senha !== "admin123") {
+      alert("Senha incorreta.");
+      return;
+    }
+    adminPanel.style.display = 'block';
+    formConvidado.style.display = 'none';
+    carregarPainelAdmin();
+  });
+
+  // Botão para fechar painel admin
+  document.getElementById('btnFecharAdmin').addEventListener('click', () => {
+    adminPanel.style.display = 'none';
+    formConvidado.style.display = 'block';
+  });
+
+  // Carregar dados no painel admin
+  async function carregarPainelAdmin() {
+    const snapshot = await db.collection("presentesEscolhidos").orderBy("timestamp", "desc").get();
+    tabelaConvidadosBody.innerHTML = '';
+    snapshot.forEach(doc => {
+      const d = doc.data();
+      tabelaConvidadosBody.innerHTML += `
+        <tr>
+          <td>${d.convidado}</td>
+          <td>${d.telefone}</td>
+          <td>${d.acompanhantes}</td>
+          <td>${d.nomePresente}</td>
+          <td><button class="btn-del" onclick="excluirPresente('${doc.id}')">Excluir</button></td>
+        </tr>`;
+    });
+  }
+
+  // Excluir um presente escolhido
+  async function excluirPresente(id) {
+    if (!confirm("Quer mesmo excluir este registro?")) return;
+    await db.collection("presentesEscolhidos").doc(id).delete();
+    carregarPainelAdmin();
+    carregarPresentesDisponiveis();
+  }
+
+  window.excluirPresente = excluirPresente;
+
+  // Inicializar lista
+  carregarPresentesDisponiveis();
+</script>
+
+</body>
+</html>
